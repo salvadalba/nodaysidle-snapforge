@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - SmartFilter
 
@@ -210,12 +211,25 @@ struct LibraryBrowserView: View {
                     ForEach(vm.filteredCaptures, id: \.id) { capture in
                         CaptureThumbnailCell(
                             capture: capture,
-                            isSelected: vm.selectedCapture?.id == capture.id
-                        ) {
-                            vm.selectedCapture = capture
-                        } onDelete: {
-                            Task { await vm.delete(id: capture.id, libraryService: appServices.libraryService) }
-                        }
+                            isSelected: vm.selectedCapture?.id == capture.id,
+                            onSelect: { vm.selectedCapture = capture },
+                            onOpen: {
+                                NSWorkspace.shared.open(URL(fileURLWithPath: capture.filePath))
+                            },
+                            onRevealInFinder: {
+                                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: capture.filePath)])
+                            },
+                            onCopyImage: {
+                                if let image = NSImage(contentsOfFile: capture.filePath) {
+                                    let pasteboard = NSPasteboard.general
+                                    pasteboard.clearContents()
+                                    pasteboard.writeObjects([image])
+                                }
+                            },
+                            onDelete: {
+                                Task { await vm.delete(id: capture.id, libraryService: appServices.libraryService) }
+                            }
+                        )
                     }
                 }
                 .padding(DesignSystem.Spacing.md)
@@ -424,84 +438,98 @@ private struct CaptureThumbnailCell: View {
     let capture: CaptureRecordSnapshot
     let isSelected: Bool
     let onSelect: () -> Void
+    let onOpen: () -> Void
+    let onRevealInFinder: () -> Void
+    let onCopyImage: () -> Void
     let onDelete: () -> Void
 
     @State private var isHovered: Bool = false
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
-                // Thumbnail area
-                ZStack {
-                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
-                        .fill(DesignSystem.Colors.surfacePrimary)
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+            // Thumbnail area
+            ZStack {
+                RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
+                    .fill(DesignSystem.Colors.surfacePrimary)
 
-                    if let thumbPath = capture.thumbnailPath,
-                       let nsImage = NSImage(contentsOfFile: thumbPath) {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .scaledToFill()
-                            .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous))
-                    } else {
-                        Image(systemName: captureTypeSymbol)
-                            .font(.system(size: 28, weight: .light))
-                            .foregroundStyle(DesignSystem.Colors.forgeOrange.opacity(0.6))
-                    }
-
-                    // Starred badge
-                    if capture.isStarred {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(DesignSystem.Colors.sparkGold)
-                            .padding(6)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    }
+                if let thumbPath = capture.thumbnailPath,
+                   let nsImage = NSImage(contentsOfFile: thumbPath) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFill()
+                        .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous))
+                } else {
+                    Image(systemName: captureTypeSymbol)
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(DesignSystem.Colors.forgeOrange.opacity(0.6))
                 }
-                .frame(height: 120)
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
-                        .stroke(
-                            isSelected ? DesignSystem.Colors.forgeOrange : Color.clear,
-                            lineWidth: 2
-                        )
-                )
 
-                // Filename
-                Text(fileName)
-                    .font(DesignSystem.Typography.callout)
-                    .lineLimit(1)
-                    .foregroundStyle(.primary)
-
-                // Metadata row
-                HStack(spacing: DesignSystem.Spacing.xs) {
-                    Text(capture.captureType.capitalized)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: capture.fileSize, countStyle: .file))
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(.secondary)
+                // Starred badge
+                if capture.isStarred {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DesignSystem.Colors.sparkGold)
+                        .padding(6)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
             }
-            .padding(DesignSystem.Spacing.sm)
-            .background(
-                DesignSystem.Materials.thick,
-                in: RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
-            )
+            .frame(height: 120)
             .overlay(
-                RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
+                RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
                     .stroke(
-                        isSelected
-                            ? DesignSystem.Colors.forgeOrange.opacity(0.5)
-                            : (isHovered ? DesignSystem.Colors.glassBorder : DesignSystem.Colors.glassBorderSubtle),
-                        lineWidth: isSelected ? 1.5 : 0.5
+                        isSelected ? DesignSystem.Colors.forgeOrange : Color.clear,
+                        lineWidth: 2
                     )
             )
-            .forgeShadow(isHovered ? DesignSystem.Shadows.medium : DesignSystem.Shadows.subtle)
+
+            // Filename
+            Text(fileName)
+                .font(DesignSystem.Typography.callout)
+                .lineLimit(1)
+                .foregroundStyle(.primary)
+
+            // Metadata row
+            HStack(spacing: DesignSystem.Spacing.xs) {
+                Text(capture.captureType.capitalized)
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(ByteCountFormatter.string(fromByteCount: capture.fileSize, countStyle: .file))
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(DesignSystem.Spacing.sm)
+        .background(
+            DesignSystem.Materials.thick,
+            in: RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
+                .stroke(
+                    isSelected
+                        ? DesignSystem.Colors.forgeOrange.opacity(0.5)
+                        : (isHovered ? DesignSystem.Colors.glassBorder : DesignSystem.Colors.glassBorderSubtle),
+                    lineWidth: isSelected ? 1.5 : 0.5
+                )
+        )
+        .forgeShadow(isHovered ? DesignSystem.Shadows.medium : DesignSystem.Shadows.subtle)
+        .contentShape(Rectangle())
+        // Double-click → open in Preview; single-click → select
+        .onTapGesture(count: 2) { onOpen() }
+        .onTapGesture(count: 1) { onSelect() }
         .onHover { isHovered = $0 }
         .contextMenu {
+            Button { onOpen() } label: {
+                Label("Open in Preview", systemImage: "eye")
+            }
+            Button { onRevealInFinder() } label: {
+                Label("Reveal in Finder", systemImage: "folder")
+            }
+            Button { onCopyImage() } label: {
+                Label("Copy Image", systemImage: "doc.on.clipboard")
+            }
+            Divider()
             Button("Delete", role: .destructive, action: onDelete)
         }
     }

@@ -44,15 +44,24 @@ struct MenuBarView: View {
                 }
 
                 MenuBarButton(title: "Scrolling Capture", symbol: "arrow.up.and.down.text.horizontal") {
-                    await performCapture { try await appServices.captureService.captureScrolling(region: CGRect(x: 0, y: 0, width: 1920, height: 1080)) }
+                    await performCapture {
+                        let screenFrame = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+                        return try await appServices.captureService.captureScrolling(region: screenFrame)
+                    }
                 }
 
                 MenuBarButton(title: "Screen Recording", symbol: "record.circle") {
-                    Task { try? await appServices.captureService.startRecording(config: RecordingConfig()) }
+                    await performCapture {
+                        // RecordingPipeline not yet wired — capture full-screen screenshot as fallback
+                        try await appServices.captureService.captureScreenshot(region: nil)
+                    }
                 }
 
                 MenuBarButton(title: "GIF Recording", symbol: "photo.on.rectangle") {
-                    Task { try? await appServices.captureService.startRecording(config: RecordingConfig(codec: .gif)) }
+                    await performCapture {
+                        // GIF pipeline not yet wired — capture full-screen screenshot as fallback
+                        try await appServices.captureService.captureScreenshot(region: nil)
+                    }
                 }
 
                 MenuBarButton(title: "OCR Capture", symbol: "doc.text.viewfinder") {
