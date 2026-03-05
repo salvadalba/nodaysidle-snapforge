@@ -22,6 +22,9 @@ public protocol CaptureServiceProtocol: Sendable {
     /// Pins a captured region as a floating overlay window.
     func pinCapture(region: CGRect) async throws
 
+    /// Reset state machine to idle so subsequent captures can proceed.
+    func resetToIdle() async
+
     /// The current capture state.
     var captureState: CaptureState { get }
 

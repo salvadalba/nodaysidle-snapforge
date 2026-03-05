@@ -88,7 +88,7 @@ struct ActionBarView: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.md)
         .padding(.vertical, DesignSystem.Spacing.sm)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .glassPanel(cornerRadius: DesignSystem.Radii.lg)
         .onKeyPress(.return) {
             let action = ActionType.allCases[selectedIndex]
             performAction(action)
@@ -146,7 +146,7 @@ private struct ActionButton: View {
             VStack(spacing: DesignSystem.Spacing.xs) {
                 ZStack {
                     // Last-used highlight ring
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
                         .stroke(
                             isLastUsed ? DesignSystem.Colors.sparkGold : Color.clear,
                             lineWidth: 1.5
@@ -154,10 +154,10 @@ private struct ActionButton: View {
                         .frame(width: 44, height: 44)
 
                     // Selected state fill
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
                         .fill(isSelected
-                              ? DesignSystem.Colors.forgeOrange.opacity(0.15)
-                              : (isHovered ? Color.primary.opacity(0.08) : Color.clear))
+                              ? DesignSystem.Colors.surfaceSelected
+                              : (isHovered ? DesignSystem.Colors.surfaceHover : Color.clear))
                         .frame(width: 44, height: 44)
 
                     // Icon — 2px stroke rendering

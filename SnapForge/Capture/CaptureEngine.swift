@@ -55,6 +55,11 @@ actor CaptureEngine: @preconcurrency CaptureServiceProtocol {
         logger.info("CaptureEngine state → \(String(describing: state))")
     }
 
+    /// Reset to idle so subsequent captures can proceed.
+    func resetToIdle() {
+        transition(to: .idle)
+    }
+
     // MARK: Directory
 
     private func capturesDirectory() throws -> URL {

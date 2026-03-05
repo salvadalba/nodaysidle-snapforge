@@ -148,7 +148,6 @@ struct LibraryBrowserView: View {
         .onChange(of: vm.searchText) {
             Task { await vm.load(libraryService: appServices.libraryService) }
         }
-        .background(DesignSystem.Colors.appleLinen.ignoresSafeArea())
     }
 
     // MARK: - Sidebar
@@ -266,7 +265,6 @@ struct LibraryBrowserView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignSystem.Colors.appleLinen)
     }
 
     // MARK: - Helpers
@@ -435,15 +433,15 @@ private struct CaptureThumbnailCell: View {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
                 // Thumbnail area
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
+                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
+                        .fill(DesignSystem.Colors.surfacePrimary)
 
                     if let thumbPath = capture.thumbnailPath,
                        let nsImage = NSImage(contentsOfFile: thumbPath) {
                         Image(nsImage: nsImage)
                             .resizable()
                             .scaledToFill()
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous))
                     } else {
                         Image(systemName: captureTypeSymbol)
                             .font(.system(size: 28, weight: .light))
@@ -461,10 +459,10 @@ private struct CaptureThumbnailCell: View {
                 }
                 .frame(height: 120)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DesignSystem.Radii.sm, style: .continuous)
                         .stroke(
                             isSelected ? DesignSystem.Colors.forgeOrange : Color.clear,
-                            lineWidth: 2.5
+                            lineWidth: 2
                         )
                 )
 
@@ -487,11 +485,19 @@ private struct CaptureThumbnailCell: View {
             }
             .padding(DesignSystem.Spacing.sm)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected
-                          ? DesignSystem.Colors.forgeOrange.opacity(0.08)
-                          : (isHovered ? Color.primary.opacity(0.04) : Color.clear))
+                DesignSystem.Materials.thick,
+                in: RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Radii.md, style: .continuous)
+                    .stroke(
+                        isSelected
+                            ? DesignSystem.Colors.forgeOrange.opacity(0.5)
+                            : (isHovered ? DesignSystem.Colors.glassBorder : DesignSystem.Colors.glassBorderSubtle),
+                        lineWidth: isSelected ? 1.5 : 0.5
+                    )
+            )
+            .forgeShadow(isHovered ? DesignSystem.Shadows.medium : DesignSystem.Shadows.subtle)
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
