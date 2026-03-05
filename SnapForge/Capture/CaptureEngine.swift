@@ -24,6 +24,13 @@ actor CaptureEngine: @preconcurrency CaptureServiceProtocol {
 
     nonisolated let stateStream: AsyncStream<CaptureState>
 
+    // MARK: Recording Dependencies
+
+    private var recordingPipeline: RecordingPipeline?
+    private var recordingStream: SCStream?
+    private var recordingOutput: SnapForgeRecordingOutput?
+    private var recordingConfig: RecordingConfig?
+
     // MARK: Init
 
     init() {
@@ -33,6 +40,11 @@ actor CaptureEngine: @preconcurrency CaptureServiceProtocol {
         }
         self.stateStream = stream
         self.stateContinuation = continuation
+    }
+
+    /// Inject the recording pipeline (called from AppServices after init).
+    func setRecordingPipeline(_ pipeline: RecordingPipeline) {
+        self.recordingPipeline = pipeline
     }
 
     // MARK: Permission
@@ -368,33 +380,87 @@ actor CaptureEngine: @preconcurrency CaptureServiceProtocol {
 
     func startRecording(config: RecordingConfig) async throws {
         guard case .idle = captureState else { throw CaptureError.alreadyInProgress }
+        guard let pipeline = recordingPipeline else {
+            throw CaptureError.screenCaptureKitFailure("RecordingPipeline not configured")
+        }
+
         try await ensurePermission()
         transition(to: .capturing)
-        // Recording is delegated to RecordingPipeline. CaptureEngine marks state only.
-        logger.info("Recording started with codec: \(config.codec.rawValue), fps: \(config.fps)")
+
+        self.recordingConfig = config
+
+        // 1. Set up SCStream for continuous frame delivery
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first else {
+            throw CaptureError.screenCaptureKitFailure("No display available")
+        }
+
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let streamConfig = SCStreamConfiguration()
+        streamConfig.width = Int(CGFloat(display.frame.width) * config.resolutionScale)
+        streamConfig.height = Int(CGFloat(display.frame.height) * config.resolutionScale)
+        streamConfig.pixelFormat = kCVPixelFormatType_32BGRA
+        streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(config.fps))
+        streamConfig.showsCursor = true
+        streamConfig.queueDepth = 5
+
+        // 2. Start the recording pipeline (creates AVAssetWriter)
+        let region = CGRect(origin: .zero, size: display.frame.size)
+        try await pipeline.startRecording(region: region, config: config)
+
+        // 3. Create stream output that feeds frames to pipeline
+        let output = SnapForgeRecordingOutput(pipeline: pipeline)
+        self.recordingOutput = output
+
+        let stream = SCStream(filter: filter, configuration: streamConfig, delegate: nil)
+        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
+        try await stream.startCapture()
+        self.recordingStream = stream
+
+        logger.info("Recording started — codec=\(config.codec.rawValue) fps=\(config.fps) res=\(streamConfig.width)x\(streamConfig.height)")
     }
 
     func stopRecording() async throws -> CaptureResult {
         guard case .capturing = captureState else {
             throw CaptureError.screenCaptureKitFailure("No active recording")
         }
+        guard let pipeline = recordingPipeline else {
+            throw CaptureError.screenCaptureKitFailure("RecordingPipeline not configured")
+        }
 
         transition(to: .processing)
 
-        // Placeholder result — RecordingPipeline owns actual file production.
+        // 1. Stop the SCStream (no more frames)
+        if let stream = recordingStream {
+            try? await stream.stopCapture()
+        }
+        self.recordingStream = nil
+        self.recordingOutput = nil
+
+        // 2. Finalize the recording via pipeline
+        let outputURL = try await pipeline.stopRecording(trim: nil)
+
+        // 3. Gather file metadata
+        let attrs = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+        let fileSize = attrs[.size] as? Int64 ?? 0
+        let sourceInfo = detectSourceApp()
+
+        let captureType: CaptureType = (recordingConfig?.codec == .gif) ? .gif : .video
+
         let result = CaptureResult(
             id: UUID(),
-            captureType: .video,
-            filePath: "",
+            captureType: captureType,
+            filePath: outputURL.path,
             thumbnailPath: nil,
             timestamp: Date(),
-            sourceAppBundleID: nil,
-            sourceAppName: nil,
-            windowTitle: nil,
-            dimensions: .zero,
-            fileSize: 0
+            sourceAppBundleID: sourceInfo.bundleID,
+            sourceAppName: sourceInfo.name,
+            windowTitle: sourceInfo.windowTitle,
+            dimensions: CGSize(width: 1920, height: 1080), // from display
+            fileSize: fileSize
         )
 
+        self.recordingConfig = nil
         transition(to: .completed(result))
         return result
     }
@@ -410,7 +476,34 @@ actor CaptureEngine: @preconcurrency CaptureServiceProtocol {
     }
 }
 
-// MARK: - SCStreamOutput
+// MARK: - CMSampleBuffer Sendable
+
+// CMSampleBuffer is an immutable, reference-counted Core Foundation type.
+// Safe to send across actor boundaries; Apple just hasn't added the conformance yet.
+extension CMSampleBuffer: @retroactive @unchecked Sendable {}
+
+// MARK: - Recording SCStreamOutput
+
+/// SCStreamOutput that continuously feeds sample buffers to RecordingPipeline.
+private final class SnapForgeRecordingOutput: NSObject, SCStreamOutput, @unchecked Sendable {
+    private let pipeline: RecordingPipeline
+
+    init(pipeline: RecordingPipeline) {
+        self.pipeline = pipeline
+        super.init()
+    }
+
+    func stream(
+        _ stream: SCStream,
+        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
+        guard type == .screen else { return }
+        Task { await pipeline.appendSampleBuffer(sampleBuffer) }
+    }
+}
+
+// MARK: - Screenshot SCStreamOutput
 
 /// Minimal SCStreamOutput implementation that delivers the first captured sample.
 private final class SnapForgeSCStreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {

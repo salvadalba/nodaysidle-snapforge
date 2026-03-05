@@ -9,6 +9,8 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var lastCaptureStatus: CaptureStatus?
+    @State private var isRecording: Bool = false
+    @State private var recordingType: CaptureType?  // .video or .gif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,17 +52,27 @@ struct MenuBarView: View {
                     }
                 }
 
-                MenuBarButton(title: "Screen Recording", symbol: "record.circle") {
-                    await performCapture {
-                        // RecordingPipeline not yet wired — capture full-screen screenshot as fallback
-                        try await appServices.captureService.captureScreenshot(region: nil)
+                MenuBarButton(
+                    title: isRecording && recordingType == .video ? "Stop Recording" : "Screen Recording",
+                    symbol: isRecording && recordingType == .video ? "stop.circle.fill" : "record.circle",
+                    isDestructive: isRecording && recordingType == .video
+                ) {
+                    if isRecording && recordingType == .video {
+                        await stopRecording()
+                    } else {
+                        await startRecording(codec: .h265, type: .video)
                     }
                 }
 
-                MenuBarButton(title: "GIF Recording", symbol: "photo.on.rectangle") {
-                    await performCapture {
-                        // GIF pipeline not yet wired — capture full-screen screenshot as fallback
-                        try await appServices.captureService.captureScreenshot(region: nil)
+                MenuBarButton(
+                    title: isRecording && recordingType == .gif ? "Stop GIF" : "GIF Recording",
+                    symbol: isRecording && recordingType == .gif ? "stop.circle.fill" : "photo.on.rectangle",
+                    isDestructive: isRecording && recordingType == .gif
+                ) {
+                    if isRecording && recordingType == .gif {
+                        await stopRecording()
+                    } else {
+                        await startRecording(codec: .gif, type: .gif)
                     }
                 }
 
@@ -152,6 +164,71 @@ struct MenuBarView: View {
         pasteboard.clearContents()
         pasteboard.writeObjects([image])
         logger.info("Screenshot copied to clipboard")
+    }
+
+    // MARK: - Recording
+
+    private func startRecording(codec: RecordingCodec, type: CaptureType) async {
+        do {
+            let config = RecordingConfig(codec: codec)
+            try await appServices.captureService.startRecording(config: config)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isRecording = true
+                recordingType = type
+                lastCaptureStatus = nil
+            }
+            logger.info("Recording started: \(type.rawValue)")
+        } catch {
+            logger.error("Failed to start recording: \(error.localizedDescription)")
+            withAnimation(.easeInOut(duration: 0.25)) {
+                lastCaptureStatus = .error(message: error.localizedDescription)
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeOut(duration: 0.3)) {
+                    lastCaptureStatus = nil
+                }
+            }
+        }
+    }
+
+    private func stopRecording() async {
+        do {
+            let result = try await appServices.captureService.stopRecording()
+
+            _ = try await appServices.libraryService.save(result: result)
+            logger.info("Recording saved to library: \(result.filePath)")
+
+            copyToClipboard(filePath: result.filePath)
+            await appServices.captureService.resetToIdle()
+
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isRecording = false
+                recordingType = nil
+                lastCaptureStatus = .success(type: result.captureType)
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation(.easeOut(duration: 0.3)) {
+                    lastCaptureStatus = nil
+                }
+            }
+        } catch {
+            logger.error("Failed to stop recording: \(error.localizedDescription)")
+            await appServices.captureService.resetToIdle()
+
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isRecording = false
+                recordingType = nil
+                lastCaptureStatus = .error(message: error.localizedDescription)
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.easeOut(duration: 0.3)) {
+                    lastCaptureStatus = nil
+                }
+            }
+        }
     }
 }
 

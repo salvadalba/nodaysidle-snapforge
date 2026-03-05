@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreGraphics
+import CoreMedia
 import ImageIO
 import UniformTypeIdentifiers
 import OSLog
@@ -87,6 +88,13 @@ actor RecordingPipeline: @preconcurrency RecordingPipelineProtocol {
         metricsTask = Task { [weak self] in
             await self?.runMetricsLoop()
         }
+    }
+
+    /// Append a video sample buffer from SCStream. Called from CaptureEngine's stream output handler.
+    func appendSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        guard isRecording, let input = videoInput, input.isReadyForMoreMediaData else { return }
+        input.append(sampleBuffer)
+        frameCount += 1
     }
 
     func stopRecording(trim: TrimRange?) async throws -> URL {

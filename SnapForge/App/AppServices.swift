@@ -50,10 +50,16 @@ final class AppServices {
         self.libraryService = LibraryService(modelContainer: modelContainer, fts5Index: fts5Index)
 
         // 4. Capture engine — all dependencies ready
-        self.captureService = CaptureEngine()
+        let captureEngine = CaptureEngine()
+        self.captureService = captureEngine
 
         self.isReady = true
         logger.info("AppServices: all services initialized")
+
+        // 5. Inject recording pipeline into capture engine (must be async due to actor isolation)
+        Task {
+            await captureEngine.setRecordingPipeline(self.recordingPipeline)
+        }
     }
 
     // MARK: - Private Factories
