@@ -1,0 +1,28 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# App bundle (built artifact)
+*.app/
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+*.swp
+*~
+
+# Icon build intermediates
+/tmp/Icon.iconset/
+
+# IDE
+.vscode/
+.idea/
+
+# Entitlements (generated during build)
+.build/entitlements/
